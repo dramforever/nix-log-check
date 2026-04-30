@@ -63,16 +63,17 @@ async fn query_derivation(
     narinfo_url: reqwest::Url,
     log_url: reqwest::Url,
 ) -> PathStatus {
-    let narinfo_task = tokio::spawn(client.head(narinfo_url).send());
-    let log_task = tokio::spawn(client.head(log_url).send());
-
     (async {
+        let narinfo_task = tokio::spawn(client.head(narinfo_url).send());
         Some(match narinfo_task.await.ok()?.ok()?.status().as_u16() {
-            404 => match log_task.await.ok()?.ok()?.status().as_u16() {
-                200 => PathStatus::Failed,
-                404 => PathStatus::Missing,
-                _ => PathStatus::Error,
-            },
+            404 => {
+                let log_task = tokio::spawn(client.head(log_url).send());
+                match log_task.await.ok()?.ok()?.status().as_u16() {
+                    200 => PathStatus::Failed,
+                    404 => PathStatus::Missing,
+                    _ => PathStatus::Error,
+                }
+            }
             200 => PathStatus::Valid,
             _ => PathStatus::Error,
         })
