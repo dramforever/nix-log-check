@@ -1,0 +1,11 @@
+[package]
+name = "nix-log-check"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+eyre = "0.6.12"
+reqwest = "0.13.3"
+serde_json = "1.0.149"
+tokio = { version = "1.52.1", features = ["macros", "rt"] }
