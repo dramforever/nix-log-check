@@ -4,10 +4,7 @@
   outputs =
     { self, nixpkgs }:
     let
-      eachSystem = nixpkgs.lib.genAttrs [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
+      eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in
     {
       devShells = eachSystem (system: {
