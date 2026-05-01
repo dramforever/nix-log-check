@@ -31,6 +31,20 @@ For more options:
 $ nix-log-check --help
 ```
 
+### Example output
+
+```console
+$ nix-log-check nixpkgs#python313Packages.pygame-gui
+[INFO] nix-log-check/0.1.0
+[INFO] Checking 1 root derivation(s), total closure size 2501
+[INFO] Possibly failing: lxx0bnmbrz28p34fa34jgliz3sqpnszb-python3.13-pygame-ce-2.5.6.drv
+[INFO] 2 path(s) not in binary cache
+[INFO] 1 path(s) possibly failing
+[
+  "lxx0bnmbrz28p34fa34jgliz3sqpnszb-python3.13-pygame-ce-2.5.6.drv"
+]
+```
+
 ## Requirements
 
 Nix version 2.33 or later is required.
