@@ -66,7 +66,7 @@ struct PathInfo {
 }
 
 #[derive(clap::Parser)]
-#[command(about = "Does awesome things", long_about = None)]
+#[command(about = "Check Nix binary cache for possibly failing build logs", long_about = None)]
 struct CommandArgs {
     /// Arguments to `nix derivation show`
     #[arg(required = true)]
