@@ -128,9 +128,9 @@ async fn main() -> eyre::Result<()> {
     ]
     .join("");
 
-    eprintln!("[INFO] {user_agent}");
-
     let command_args: CommandArgs = CommandArgs::parse();
+
+    eprintln!("[INFO] {user_agent}");
 
     let output = Command::new("nix")
         .args([
