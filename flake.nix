@@ -15,7 +15,13 @@
       });
 
       packages = eachSystem (system: {
-        default = nixpkgs.legacyPackages.${system}.callPackage ./nix/package.nix { };
+        default = nixpkgs.legacyPackages.${system}.callPackage ./nix/package.nix {
+          versionSuffix =
+          with builtins;
+            if self.sourceInfo ? lastModifiedDate && self.sourceInfo ? shortRev
+            then "-${substring 0 8 self.sourceInfo.lastModifiedDate}-g${self.sourceInfo.shortRev}"
+            else "";
+        };
       });
     };
 }

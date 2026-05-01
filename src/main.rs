@@ -6,8 +6,6 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use tokio::task::JoinSet;
 
-static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
-
 #[derive(Debug, Clone)]
 struct Derivation {
     outputs: Vec<String>,
@@ -122,6 +120,16 @@ async fn query_derivation(
 
 #[tokio::main(flavor = "local")]
 async fn main() -> eyre::Result<()> {
+    let user_agent = [
+        env!("CARGO_PKG_NAME"),
+        "/",
+        env!("CARGO_PKG_VERSION"),
+        option_env!("NIX_LOG_CHECK_VERSION_SUFFIX").unwrap_or(""),
+    ]
+    .join("");
+
+    eprintln!("[INFO] {user_agent}");
+
     let command_args: CommandArgs = CommandArgs::parse();
 
     let output = Command::new("nix")
@@ -162,7 +170,7 @@ async fn main() -> eyre::Result<()> {
         .filter(|&path| !used_as_input.contains(path))
         .collect();
 
-    let client = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
+    let client = reqwest::Client::builder().user_agent(user_agent).build()?;
     let client: &reqwest::Client = Box::leak(Box::new(client));
 
     let mut seen: HashSet<String> = HashSet::new();
