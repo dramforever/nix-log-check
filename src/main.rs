@@ -14,12 +14,51 @@ struct Derivation {
     inputs: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PathStatus {
+#[derive(Debug)]
+enum PathResult {
     Valid,
     Failed,
     Missing,
     Error,
+}
+
+#[derive(Debug)]
+enum PathStatus {
+    Valid,
+    Failed,
+    Missing,
+    JoinError(tokio::task::JoinError),
+    ReqwestError(reqwest::Error),
+    HttpError(reqwest::StatusCode),
+}
+
+impl PathStatus {
+    fn is_conclusive(&self) -> bool {
+        matches!(self, PathStatus::Valid | PathStatus::Failed)
+    }
+
+    fn to_result(&self) -> PathResult {
+        match self {
+            PathStatus::Valid => PathResult::Valid,
+            PathStatus::Failed => PathResult::Failed,
+            PathStatus::Missing => PathResult::Missing,
+            PathStatus::JoinError(_) => PathResult::Error,
+            PathStatus::ReqwestError(_) => PathResult::Error,
+            PathStatus::HttpError(_) => PathResult::Error,
+        }
+    }
+}
+
+impl From<tokio::task::JoinError> for PathStatus {
+    fn from(error: tokio::task::JoinError) -> Self {
+        PathStatus::JoinError(error)
+    }
+}
+
+impl From<reqwest::Error> for PathStatus {
+    fn from(error: reqwest::Error) -> Self {
+        PathStatus::ReqwestError(error)
+    }
 }
 
 #[derive(Debug)]
@@ -62,24 +101,23 @@ async fn query_derivation(
     client: &'static reqwest::Client,
     narinfo_url: reqwest::Url,
     log_url: reqwest::Url,
-) -> PathStatus {
-    (async {
-        let narinfo_task = tokio::spawn(client.head(narinfo_url).send());
-        Some(match narinfo_task.await.ok()?.ok()?.status().as_u16() {
-            404 => {
-                let log_task = tokio::spawn(client.head(log_url).send());
-                match log_task.await.ok()?.ok()?.status().as_u16() {
-                    200 => PathStatus::Failed,
-                    404 => PathStatus::Missing,
-                    _ => PathStatus::Error,
-                }
+) -> Result<PathStatus, PathStatus> {
+    let narinfo_task = tokio::spawn(client.head(narinfo_url).send());
+    let status = narinfo_task.await??.status();
+    let res = match status.as_u16() {
+        404 => {
+            let log_task = tokio::spawn(client.head(log_url).send());
+            let status = log_task.await??.status();
+            match status.as_u16() {
+                200 => PathStatus::Failed,
+                404 => PathStatus::Missing,
+                _ => PathStatus::HttpError(status),
             }
-            200 => PathStatus::Valid,
-            _ => PathStatus::Error,
-        })
-    })
-    .await
-    .unwrap_or(PathStatus::Error)
+        }
+        200 => PathStatus::Valid,
+        _ => PathStatus::HttpError(status),
+    };
+    Ok(res)
 }
 
 #[tokio::main(flavor = "local")]
@@ -146,7 +184,9 @@ async fn main() -> eyre::Result<()> {
         }
 
         js.spawn(async move {
-            let status = query_derivation(client, narinfo_url, log_url).await;
+            let status = query_derivation(client, narinfo_url, log_url)
+                .await
+                .unwrap_or_else(|error| error);
             PathInfo {
                 path: path.to_owned(),
                 status,
@@ -166,21 +206,28 @@ async fn main() -> eyre::Result<()> {
         spawn_task_for(drv, js);
     }
 
-    let mut results: HashMap<String, PathStatus> = HashMap::new();
+    let mut results: HashMap<String, PathResult> = HashMap::new();
 
     while let Some(res) = js.join_next().await {
         let PathInfo { path, status } = res?;
         let drv: &Derivation = parsed.get(&path).unwrap();
 
-        if status == PathStatus::Failed {
-            eprintln!("[INFO] Possibly failing: {path}");
-        } else if status == PathStatus::Error {
-            eprintln!("[ERROR] Failed to check: {path}");
+        results.insert(path.clone(), status.to_result());
+
+        let conclusive = status.is_conclusive();
+
+        match status {
+            PathStatus::Failed => eprintln!("[INFO] Possibly failing: {path}"),
+            PathStatus::JoinError(e) => Err(e).context(format!("Error checking {path}"))?,
+            PathStatus::ReqwestError(e) => Err(e).context(format!("Error checking {path}"))?,
+            PathStatus::HttpError(sc) if sc.is_client_error() => {
+                bail!("{sc} checking {path}\nPlease check binary cache URL or try again later.")
+            }
+            PathStatus::HttpError(sc) => eprintln!("[ERROR] HTTP error {sc}: {path}"),
+            PathStatus::Valid | PathStatus::Missing => {}
         }
 
-        results.insert(path, status);
-
-        if let PathStatus::Missing | PathStatus::Error = status {
+        if !conclusive {
             for input in &drv.inputs {
                 spawn_task_for(input, js);
             }
@@ -189,12 +236,12 @@ async fn main() -> eyre::Result<()> {
 
     let num_missing = results
         .iter()
-        .filter(|&(_, &v)| v != PathStatus::Valid)
+        .filter(|(_, v)| !matches!(v, PathResult::Valid))
         .count();
 
     let failed: Vec<String> = results
         .into_iter()
-        .filter_map(|(k, v)| (v == PathStatus::Failed).then_some(k))
+        .filter_map(|(k, v)| matches!(v, PathResult::Failed).then_some(k))
         .collect();
 
     let num_failed = failed.len();
