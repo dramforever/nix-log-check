@@ -1,4 +1,5 @@
 use clap::Parser;
+use colored::Colorize;
 use eyre::{Context, ContextCompat, bail};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -118,6 +119,42 @@ async fn query_derivation(
     Ok(res)
 }
 
+fn print_path(path: &str) {
+    if let Some((hash, name)) = path.split_once('-') {
+        if let Some(base) = name.strip_suffix(".drv") {
+            println!(
+                "{}{}{}{}",
+                hash.dimmed(),
+                "-".dimmed(),
+                base.bold(),
+                ".drv".dimmed(),
+            );
+        } else {
+            println!("{}{}{}", hash.dimmed(), "-".dimmed(), name.bold());
+        }
+    } else {
+        println!("{}", path);
+    }
+}
+
+macro_rules! info {
+    ($($arg: expr),+ $(,)?) => {
+        eprintln!("{} {}", "[INFO]".bold(), format_args!($($arg),*))
+    };
+}
+
+macro_rules! debug {
+    ($($arg: expr),+ $(,)?) => {
+        eprintln!("{} {}", "[DEBUG]".blue(), format_args!($($arg),*))
+    };
+}
+
+macro_rules! error {
+    ($($arg: expr),+ $(,)?) => {
+        eprintln!("{} {}", "[ERROR]".red(), format_args!($($arg),*))
+    };
+}
+
 #[tokio::main(flavor = "local")]
 async fn main() -> eyre::Result<()> {
     let user_agent = [
@@ -130,7 +167,7 @@ async fn main() -> eyre::Result<()> {
 
     let command_args: CommandArgs = CommandArgs::parse();
 
-    eprintln!("[INFO] {user_agent}");
+    info!("{user_agent}");
 
     let output = Command::new("nix")
         .args([
@@ -188,7 +225,7 @@ async fn main() -> eyre::Result<()> {
         let log_url = make_log_url(&command_args.url, &path);
 
         if command_args.verbose {
-            eprintln!("[DEBUG] Querying {log_url} and {narinfo_url}");
+            debug!("Querying {log_url} and {narinfo_url}");
         }
 
         js.spawn(async move {
@@ -202,8 +239,8 @@ async fn main() -> eyre::Result<()> {
         });
     };
 
-    eprintln!(
-        "[INFO] Checking {} root derivation(s), total closure size {}",
+    info!(
+        "Checking {} root derivation(s), total closure size {}",
         roots.len(),
         parsed.len()
     );
@@ -225,13 +262,13 @@ async fn main() -> eyre::Result<()> {
         let conclusive = status.is_conclusive();
 
         match status {
-            PathStatus::Failed => eprintln!("[INFO] Possibly failing: {path}"),
+            PathStatus::Failed => info!("Possibly failing: {path}"),
             PathStatus::JoinError(e) => Err(e).context(format!("Error checking {path}"))?,
             PathStatus::ReqwestError(e) => Err(e).context(format!("Error checking {path}"))?,
             PathStatus::HttpError(sc) if sc.is_client_error() => {
                 bail!("{sc} checking {path}\nPlease check binary cache URL or try again later.")
             }
-            PathStatus::HttpError(sc) => eprintln!("[ERROR] HTTP error {sc}: {path}"),
+            PathStatus::HttpError(sc) => error!("HTTP error {sc}: {path}"),
             PathStatus::Valid | PathStatus::Missing => {}
         }
 
@@ -254,15 +291,17 @@ async fn main() -> eyre::Result<()> {
 
     let num_failed = failed.len();
 
-    eprintln!("[INFO] {num_missing} path(s) not in binary cache");
+    info!("{num_missing} path(s) not in binary cache");
 
     if num_failed > 0 {
-        eprintln!("[INFO] {num_failed} path(s) possibly failing");
+        info!("{num_failed} path(s) possibly failing");
     } else {
-        eprintln!("[INFO] No possibly failing path found");
+        info!("No possibly failing path found");
     }
 
-    println!("{}", serde_json::to_string_pretty(&failed)?);
+    for path in failed {
+        print_path(&path);
+    }
 
     Ok(())
 }
