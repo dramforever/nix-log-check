@@ -1,4 +1,5 @@
 {
+  lib,
   rustPlatform,
   versionSuffix ? "",
 }:
@@ -11,7 +12,7 @@ rustPlatform.buildRustPackage {
   pname = cargoToml.package.name;
   version = cargoToml.package.version + versionSuffix;
 
-  src = ../.;
+  src = lib.cleanSource ../.;
   cargoLock.lockFile = ../Cargo.lock;
 
   env.NIX_LOG_CHECK_VERSION_SUFFIX = versionSuffix;
