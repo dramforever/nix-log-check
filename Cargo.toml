@@ -1,5 +1,6 @@
 [package]
 name = "nix-log-check"
+license = "0BSD"
 version = "0.1.2"
 edition = "2024"
 
